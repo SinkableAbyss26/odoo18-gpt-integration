@@ -57,7 +57,7 @@ class GPTService(models.AbstractModel):
                     'type': 'input_text',
                     'text': content,
                 }]
-                normalized.append({'role': m.get('role'), 'content': parts})
+                normalized.append({'role': m.get('role') or 'user', 'content': parts})
             return normalized
 
         params = {
@@ -85,23 +85,27 @@ class GPTService(models.AbstractModel):
             else:
                 raise
 
-        texts = []
-        for output in getattr(response, 'output', []) or []:
-            content = getattr(output, 'content', None)
-            if content is None and hasattr(output, 'get'):
-                content = output.get('content', [])
-            for part in content or []:
-                texts.append(getattr(part, 'text', '') or part.get('text', ''))
-        text = ''.join(texts)
+        text = getattr(response, 'output_text', '') or ''
+        if not text.strip():
+            texts = []
+            for output in getattr(response, 'output', []) or []:
+                content = getattr(output, 'content', None)
+                if content is None and hasattr(output, 'get'):
+                    content = output.get('content', [])
+                for part in content or []:
+                    texts.append(getattr(part, 'text', '') or part.get('text', ''))
+            text = ''.join(texts)
         if not text.strip():
             raise ValueError('Empty response from model')
 
-        usage_raw = getattr(response, 'usage', {}) or {}
+        usage_obj = getattr(response, 'usage', None)
         usage = {
-            'prompt_tokens': usage_raw.get('input_tokens', 0),
-            'completion_tokens': usage_raw.get('output_tokens', 0),
-            'total_tokens': usage_raw.get('total_tokens', usage_raw.get('input_tokens', 0) + usage_raw.get('output_tokens', 0)),
+            'prompt_tokens': getattr(usage_obj, 'input_tokens', 0),
+            'completion_tokens': getattr(usage_obj, 'output_tokens', 0),
+            'total_tokens': getattr(usage_obj, 'total_tokens', 0),
         }
+        if not usage['total_tokens']:
+            usage['total_tokens'] = usage['prompt_tokens'] + usage['completion_tokens']
         self._log_usage(model_name, usage, messages, text)
         return text
 
@@ -115,12 +119,23 @@ class GPTService(models.AbstractModel):
             prompt_tokens * pricing.get('prompt', 0) +
             completion_tokens * pricing.get('completion', 0)
         )
+        def _stringify(content):
+            if isinstance(content, list):
+                texts = []
+                for part in content:
+                    if isinstance(part, dict) or hasattr(part, 'get'):
+                        texts.append(getattr(part, 'text', '') or part.get('text', ''))
+                    else:
+                        texts.append(getattr(part, 'text', '') or str(part))
+                return ''.join(texts)
+            return content or ''
+
         self.env['gpt.completion.log'].sudo().create({
             'model_name': model_name,
             'prompt_tokens': prompt_tokens,
             'completion_tokens': completion_tokens,
             'total_tokens': total_tokens,
             'cost': cost,
-            'prompt': '\n'.join(m.get('content', '') for m in messages),
+            'prompt': '\n'.join(_stringify(m.get('content', '')) for m in messages),
             'response': response,
         })
