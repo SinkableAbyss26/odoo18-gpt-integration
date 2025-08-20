@@ -1,20 +1,20 @@
 <?xml version="1.0"?>
 <odoo>
-    <record id="is_chatgpt_res_config_settings_view" model="ir.ui.view">
-        <field name="name">res.config.settings.view.form.is.chatgpt.inherit</field>
+    <record id="gpt_core_res_config_settings_view" model="ir.ui.view">
+        <field name="name">res.config.settings.view.form.gpt.core</field>
         <field name="model">res.config.settings</field>
         <field name="inherit_id" ref="base_setup.res_config_settings_view_form"/>
         <field name="arch" type="xml">
             <xpath expr="//form" position="inside">
-                <div class="app_settings_block" data-string="ChatGPT" string="ChatGTP" data-key="is_chatgpt_integration">
-                    <h2>ChatGTP</h2>
-                    <div class="col-xs-12 row o_settings_container o_chatgpt_chatgpt_container">
+                <div class="app_settings_block" data-string="GPT" string="GPT" data-key="gpt_core">
+                    <h2>GPT</h2>
+                    <div class="col-xs-12 row o_settings_container o_gpt_core_container">
                         <div class="col-xs-12 col-md-6 o_setting_box">
                             <div class="o_setting_right_pane border-start-0">
                                 <div class="content-group">
                                     <div class="row mt8">
                                         <label class="col-lg-3" string="API Key" for="openapi_api_key"/>
-                                        <field name="openapi_api_key" title="OpenAPI API Key"/>
+                                        <field name="openapi_api_key" title="OpenAI API Key"/>
                                     </div>
                                 </div>
                             </div>
@@ -24,10 +24,22 @@
                             <div class="o_setting_right_pane">
                                 <span class="o_form_label">ChatGPT Model</span>
                                 <div class="text-muted">
-                                    Mode for the ChatGPT request
+                                    Model for the ChatGPT request
                                 </div>
                                 <div class="content-group mt16">
                                     <field name="chatgpt_model_id"/>
+                                </div>
+                                <div class="content-group mt16">
+                                    <div class="row">
+                                        <label class="col-lg-3" string="Temperature" for="temperature"/>
+                                        <field name="temperature"/>
+                                    </div>
+                                </div>
+                                <div class="content-group mt16">
+                                    <div class="row">
+                                        <label class="col-lg-3" string="Max Tokens" for="max_tokens"/>
+                                        <field name="max_tokens"/>
+                                    </div>
                                 </div>
                             </div>
                         </div>

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <record id="chatgpt_model_gpt_4o" model="chatgpt.model">
+            <field name="name">gpt-4o</field>
+        </record>
+        <record id="chatgpt_model_gpt_4o_mini" model="chatgpt.model">
+            <field name="name">gpt-4o-mini</field>
+        </record>
+        <record id="chatgpt_model_gpt_5_mini" model="chatgpt.model">
+            <field name="name">gpt-5-mini</field>
+        </record>
+        <record id="chatgpt_model_gpt_5_nano" model="chatgpt.model">
+            <field name="name">gpt-5-nano</field>
+        </record>
+    </data>
+</odoo>

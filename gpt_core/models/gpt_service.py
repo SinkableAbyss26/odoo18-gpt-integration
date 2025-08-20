@@ -1,0 +1,69 @@
+# -*- coding: utf-8 -*-
+from openai import OpenAI
+from odoo import api, models
+
+
+PRICING = {
+    'gpt-4o': {'prompt': 0.000005, 'completion': 0.000015},
+    'gpt-4o-mini': {'prompt': 0.00000015, 'completion': 0.00000060},
+    'gpt-5-mini': {'prompt': 0.00000050, 'completion': 0.00000150},
+    'gpt-5-nano': {'prompt': 0.00000010, 'completion': 0.00000040},
+}
+
+
+class GPTService(models.AbstractModel):
+    _name = 'gpt.service'
+    _description = 'OpenAI GPT Service'
+
+    @api.model
+    def _get_client(self):
+        api_key = self.env['ir.config_parameter'].sudo().get_param('gpt_core.openapi_api_key')
+        if not api_key:
+            raise ValueError('Missing OpenAI API key')
+        return OpenAI(api_key=api_key)
+
+    @api.model
+    def _default_params(self):
+        ICP = self.env['ir.config_parameter'].sudo()
+        model_name = ICP.get_param('gpt_core.chatgpt_model') or 'gpt-4o-mini'
+        temperature = float(ICP.get_param('gpt_core.temperature') or 0.0)
+        max_tokens = int(ICP.get_param('gpt_core.max_tokens') or 512)
+        return model_name, temperature, max_tokens
+
+    @api.model
+    def chat_completion(self, messages, **kwargs):
+        client = self._get_client()
+        model_name, temperature, max_tokens = self._default_params()
+        temperature = kwargs.get('temperature', temperature)
+        max_tokens = kwargs.get('max_tokens', max_tokens)
+        model_name = kwargs.get('model', model_name)
+        response = client.chat.completions.create(
+            model=model_name,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        message = response.choices[0].message.content
+        usage = response.usage or {}
+        self._log_usage(model_name, usage, messages, message)
+        return message
+
+    @api.model
+    def _log_usage(self, model_name, usage, messages, response):
+        prompt_tokens = usage.get('prompt_tokens', 0)
+        completion_tokens = usage.get('completion_tokens', 0)
+        total_tokens = usage.get('total_tokens', prompt_tokens + completion_tokens)
+        pricing = PRICING.get(model_name, {})
+        cost = (
+            prompt_tokens * pricing.get('prompt', 0) +
+            completion_tokens * pricing.get('completion', 0)
+        )
+        self.env['gpt.completion.log'].sudo().create({
+            'model_name': model_name,
+            'prompt_tokens': prompt_tokens,
+            'completion_tokens': completion_tokens,
+            'total_tokens': total_tokens,
+            'cost': cost,
+            'prompt': '\n'.join(m.get('content', '') for m in messages),
+            'response': response,
+        })
