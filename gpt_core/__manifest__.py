@@ -14,7 +14,7 @@
         'data/chatgpt_model_data.xml',
         'views/res_config_settings_views.xml',
     ],
-    'external_dependencies': {'python': ['openai>=1.30.0']},
+    'external_dependencies': {'python': ['openai']},
     'installable': True,
     'application': False,
     'auto_install': False,
