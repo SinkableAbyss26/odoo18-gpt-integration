@@ -16,3 +16,5 @@ class GPTCompletionLog(models.Model):
     currency = fields.Char(default='USD')
     prompt = fields.Text()
     response = fields.Text()
+    used_retry = fields.Boolean()
+    used_fallback = fields.Boolean()

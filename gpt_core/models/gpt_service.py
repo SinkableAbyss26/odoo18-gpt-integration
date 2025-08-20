@@ -21,7 +21,8 @@ class GPTService(models.AbstractModel):
 
     @api.model
     def _get_client(self):
-        api_key = self.env['ir.config_parameter'].sudo().get_param('gpt_core.openapi_api_key')
+        ICP = self.env['ir.config_parameter'].sudo()
+        api_key = ICP.get_param('gpt_core.openapi_api_key')
         if not api_key:
             raise ValueError('Missing OpenAI API key')
         return OpenAI(api_key=api_key)
@@ -33,7 +34,9 @@ class GPTService(models.AbstractModel):
         model_name = 'gpt-5-nano'
         if model_param:
             if model_param.isdigit():
-                model_rec = self.env['chatgpt.model'].sudo().browse(int(model_param))
+                model_rec = (
+                    self.env['chatgpt.model'].sudo().browse(int(model_param))
+                )
                 model_name = model_rec.name or model_name
             else:
                 model_name = model_param
@@ -49,52 +52,107 @@ class GPTService(models.AbstractModel):
         max_tokens = kwargs.get('max_tokens', max_tokens)
         model_name = kwargs.get('model', model_name)
 
-        def _normalize(msgs):
-            normalized = []
-            for m in msgs:
-                content = m.get('content', '')
-                parts = content if isinstance(content, list) else [{
-                    'type': 'input_text',
-                    'text': content,
-                }]
-                normalized.append({'role': m.get('role') or 'user', 'content': parts})
-            return normalized
+        def _stringify(content):
+            if isinstance(content, list):
+                texts = []
+                for part in content:
+                    if isinstance(part, dict) or hasattr(part, 'get'):
+                        texts.append(
+                            getattr(part, 'text', '') or part.get('text', '')
+                        )
+                    else:
+                        texts.append(
+                            getattr(part, 'text', '') or str(part)
+                        )
+                return ''.join(texts)
+            return content or ''
 
-        params = {
-            'model': model_name,
-            'messages': _normalize(messages),
-            'max_output_tokens': max_tokens,
-        }
-        if not model_name.startswith('gpt-5') and temperature is not None:
-            params['temperature'] = temperature
+        prompt = '\n'.join(_stringify(m.get('content', '')) for m in messages)
 
-        try:
-            response = client.responses.create(**params)
-        except Exception as e:  # adapt unsupported params silently
-            msg = str(e).lower()
-            adapted = False
-            if 'max_tokens' in msg:
-                params['max_output_tokens'] = params.pop('max_tokens', max_tokens)
-                adapted = True
-            if 'temperature' in msg and 'temperature' in params:
-                params.pop('temperature', None)
-                adapted = True
-            if adapted:
-                _logger.info('Adjusted unsupported parameter: %s', e)
-                response = client.responses.create(**params)
-            else:
-                raise
+        def _request(m_name, tokens):
+            params = {
+                'model': m_name,
+                'input': prompt,
+                'max_output_tokens': tokens,
+            }
+            if not m_name.startswith('gpt-5') and temperature is not None:
+                params['temperature'] = temperature
+            try:
+                resp = client.responses.create(**params)
+            except Exception as e:  # adapt unsupported params silently
+                msg = str(e).lower()
+                adapted = False
+                if 'max_tokens' in msg:
+                    params['max_output_tokens'] = params.pop(
+                        'max_tokens', tokens
+                    )
+                    adapted = True
+                if 'temperature' in msg and 'temperature' in params:
+                    params.pop('temperature', None)
+                    adapted = True
+                if adapted:
+                    _logger.info('Adjusted unsupported parameter: %s', e)
+                    resp = client.responses.create(**params)
+                else:
+                    raise
+            return resp
 
-        text = getattr(response, 'output_text', '') or ''
+        def _extract_text(resp):
+            text = getattr(resp, 'output_text', '') or ''
+            if not text.strip():
+                texts = []
+                for output in getattr(resp, 'output', []) or []:
+                    content = getattr(output, 'content', None)
+                    if content is None and hasattr(output, 'get'):
+                        content = output.get('content', [])
+                    for part in content or []:
+                        texts.append(
+                            getattr(part, 'text', '') or part.get('text', '')
+                        )
+                text = ''.join(texts)
+            return text
+
+        used_retry = False
+        used_fallback = False
+
+        response = _request(model_name, max_tokens)
+        _logger.info(
+            'Raw response: %s',
+            response.model_dump()
+            if hasattr(response, 'model_dump')
+            else response.__dict__,
+        )
+        text = _extract_text(response)
+
         if not text.strip():
-            texts = []
-            for output in getattr(response, 'output', []) or []:
-                content = getattr(output, 'content', None)
-                if content is None and hasattr(output, 'get'):
-                    content = output.get('content', [])
-                for part in content or []:
-                    texts.append(getattr(part, 'text', '') or part.get('text', ''))
-            text = ''.join(texts)
+            used_retry = True
+            retry_tokens = max(max_tokens, 128)
+            response = _request(model_name, retry_tokens)
+            _logger.info(
+                'Raw response (retry): %s',
+                response.model_dump()
+                if hasattr(response, 'model_dump')
+                else response.__dict__,
+            )
+            text = _extract_text(response)
+            if not text.strip() and model_name == 'gpt-5-nano':
+                used_fallback = True
+                fallback_model = 'gpt-5-mini'
+                _logger.info(
+                    'Falling back from %s to %s due to empty response',
+                    model_name,
+                    fallback_model,
+                )
+                response = _request(fallback_model, retry_tokens)
+                model_name = fallback_model
+                _logger.info(
+                    'Raw response (fallback): %s',
+                    response.model_dump()
+                    if hasattr(response, 'model_dump')
+                    else response.__dict__,
+                )
+                text = _extract_text(response)
+
         if not text.strip():
             raise ValueError('Empty response from model')
 
@@ -105,37 +163,67 @@ class GPTService(models.AbstractModel):
             'total_tokens': getattr(usage_obj, 'total_tokens', 0),
         }
         if not usage['total_tokens']:
-            usage['total_tokens'] = usage['prompt_tokens'] + usage['completion_tokens']
-        self._log_usage(model_name, usage, messages, text)
+            usage['total_tokens'] = (
+                usage['prompt_tokens'] + usage['completion_tokens']
+            )
+        self._log_usage(
+            model_name,
+            usage,
+            messages,
+            text,
+            used_retry=used_retry,
+            used_fallback=used_fallback,
+        )
         return text
 
     @api.model
-    def _log_usage(self, model_name, usage, messages, response):
+    def _log_usage(
+        self,
+        model_name,
+        usage,
+        messages,
+        response,
+        used_retry=False,
+        used_fallback=False,
+    ):
         prompt_tokens = usage.get('prompt_tokens', 0)
         completion_tokens = usage.get('completion_tokens', 0)
-        total_tokens = usage.get('total_tokens', prompt_tokens + completion_tokens)
+        total_tokens = usage.get(
+            'total_tokens', prompt_tokens + completion_tokens
+        )
         pricing = PRICING.get(model_name, {})
         cost = (
-            prompt_tokens * pricing.get('prompt', 0) +
-            completion_tokens * pricing.get('completion', 0)
+            prompt_tokens * pricing.get('prompt', 0)
+            + completion_tokens * pricing.get('completion', 0)
         )
+
         def _stringify(content):
             if isinstance(content, list):
                 texts = []
                 for part in content:
                     if isinstance(part, dict) or hasattr(part, 'get'):
-                        texts.append(getattr(part, 'text', '') or part.get('text', ''))
+                        texts.append(
+                            getattr(part, 'text', '') or part.get('text', '')
+                        )
                     else:
-                        texts.append(getattr(part, 'text', '') or str(part))
+                        texts.append(
+                            getattr(part, 'text', '') or str(part)
+                        )
                 return ''.join(texts)
             return content or ''
 
-        self.env['gpt.completion.log'].sudo().create({
-            'model_name': model_name,
-            'prompt_tokens': prompt_tokens,
-            'completion_tokens': completion_tokens,
-            'total_tokens': total_tokens,
-            'cost': cost,
-            'prompt': '\n'.join(_stringify(m.get('content', '')) for m in messages),
-            'response': response,
-        })
+        self.env['gpt.completion.log'].sudo().create(
+            {
+                'model_name': model_name,
+                'prompt_tokens': prompt_tokens,
+                'completion_tokens': completion_tokens,
+                'total_tokens': total_tokens,
+                'cost': cost,
+                'prompt': '\n'.join(
+                    _stringify(m.get('content', '')) for m in messages
+                ),
+                'response': response,
+                'used_retry': used_retry,
+                'used_fallback': used_fallback,
+            }
+        )
