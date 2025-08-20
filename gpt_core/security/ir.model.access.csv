@@ -1,3 +1,5 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
-gpt_core.access_chatgpt_model,access_chatgpt_model,model_chatgpt_model,base.group_user,1,1,1,1
-gpt_core.access_gpt_completion_log,access_gpt_completion_log,model_gpt_completion_log,base.group_user,1,0,0,0
+gpt_core.access_chatgpt_model_admin,access_chatgpt_model_admin,model_chatgpt_model,base.group_system,1,0,0,0
+gpt_core.access_chatgpt_model_user,access_chatgpt_model_user,model_chatgpt_model,base.group_user,1,0,0,0
+gpt_core.access_gpt_completion_log_admin,access_gpt_completion_log_admin,model_gpt_completion_log,base.group_system,1,0,1,0
+gpt_core.access_gpt_completion_log_support,access_gpt_completion_log_support,model_gpt_completion_log,base.group_user,1,0,0,0
