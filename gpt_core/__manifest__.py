@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'GPT Core',
-    'version': '1.0',
+    'version': '18.0.1.0',
     'license': 'AGPL-3',
     'summary': 'Core utilities for GPT integration',
     'description': 'Configuration and service layer for OpenAI GPT models.',
@@ -14,7 +14,7 @@
         'data/chatgpt_model_data.xml',
         'views/res_config_settings_views.xml',
     ],
-    'external_dependencies': {'python': ['openai']},
+    'external_dependencies': {'python': ['openai>=1.30.0']},
     'installable': True,
     'application': False,
     'auto_install': False,
