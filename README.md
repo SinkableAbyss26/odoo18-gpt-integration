@@ -15,6 +15,7 @@ La arquitectura es **modular**, manteniendo separación clara de responsabilidad
 
 - **gpt_core**
   - Configuración de API key, modelo, temperatura, límites.
+  - `max_tokens` ahora alimenta `max_output_tokens` de la Responses API.
   - Servicios: `gpt.service.complete()` y `gpt.service.retrieve_and_complete()`.
   - Logs de tokens y coste por conversación.
 

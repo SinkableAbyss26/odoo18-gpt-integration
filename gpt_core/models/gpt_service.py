@@ -1,6 +1,10 @@
 # -*- coding: utf-8 -*-
+import logging
 from openai import OpenAI
 from odoo import api, models
+
+
+_logger = logging.getLogger(__name__)
 
 
 PRICING = {
@@ -25,7 +29,14 @@ class GPTService(models.AbstractModel):
     @api.model
     def _default_params(self):
         ICP = self.env['ir.config_parameter'].sudo()
-        model_name = ICP.get_param('gpt_core.chatgpt_model') or 'gpt-4o-mini'
+        model_param = ICP.get_param('gpt_core.chatgpt_model')
+        model_name = 'gpt-5-nano'
+        if model_param:
+            if model_param.isdigit():
+                model_rec = self.env['chatgpt.model'].sudo().browse(int(model_param))
+                model_name = model_rec.name or model_name
+            else:
+                model_name = model_param
         temperature = float(ICP.get_param('gpt_core.temperature') or 0.0)
         max_tokens = int(ICP.get_param('gpt_core.max_tokens') or 512)
         return model_name, temperature, max_tokens
@@ -37,16 +48,62 @@ class GPTService(models.AbstractModel):
         temperature = kwargs.get('temperature', temperature)
         max_tokens = kwargs.get('max_tokens', max_tokens)
         model_name = kwargs.get('model', model_name)
-        response = client.chat.completions.create(
-            model=model_name,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
-        message = response.choices[0].message.content
-        usage = response.usage or {}
-        self._log_usage(model_name, usage, messages, message)
-        return message
+
+        def _normalize(msgs):
+            normalized = []
+            for m in msgs:
+                content = m.get('content', '')
+                parts = content if isinstance(content, list) else [{
+                    'type': 'input_text',
+                    'text': content,
+                }]
+                normalized.append({'role': m.get('role'), 'content': parts})
+            return normalized
+
+        params = {
+            'model': model_name,
+            'messages': _normalize(messages),
+            'max_output_tokens': max_tokens,
+        }
+        if not model_name.startswith('gpt-5') and temperature is not None:
+            params['temperature'] = temperature
+
+        try:
+            response = client.responses.create(**params)
+        except Exception as e:  # adapt unsupported params silently
+            msg = str(e).lower()
+            adapted = False
+            if 'max_tokens' in msg:
+                params['max_output_tokens'] = params.pop('max_tokens', max_tokens)
+                adapted = True
+            if 'temperature' in msg and 'temperature' in params:
+                params.pop('temperature', None)
+                adapted = True
+            if adapted:
+                _logger.info('Adjusted unsupported parameter: %s', e)
+                response = client.responses.create(**params)
+            else:
+                raise
+
+        texts = []
+        for output in getattr(response, 'output', []) or []:
+            content = getattr(output, 'content', None)
+            if content is None and hasattr(output, 'get'):
+                content = output.get('content', [])
+            for part in content or []:
+                texts.append(getattr(part, 'text', '') or part.get('text', ''))
+        text = ''.join(texts)
+        if not text.strip():
+            raise ValueError('Empty response from model')
+
+        usage_raw = getattr(response, 'usage', {}) or {}
+        usage = {
+            'prompt_tokens': usage_raw.get('input_tokens', 0),
+            'completion_tokens': usage_raw.get('output_tokens', 0),
+            'total_tokens': usage_raw.get('total_tokens', usage_raw.get('input_tokens', 0) + usage_raw.get('output_tokens', 0)),
+        }
+        self._log_usage(model_name, usage, messages, text)
+        return text
 
     @api.model
     def _log_usage(self, model_name, usage, messages, response):
