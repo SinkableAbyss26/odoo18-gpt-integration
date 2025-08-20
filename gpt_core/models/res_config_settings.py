@@ -10,7 +10,7 @@ class ResConfigSettings(models.TransientModel):
     def _get_default_chatgpt_model(self):
         model_id = False
         try:
-            model_id = self.env.ref('gpt_core.chatgpt_model_gpt_5_nano').id
+            model_id = self.env.ref('gpt_core.chatgpt_model_gpt_5_mini').id
         except Exception:
             model_id = False
         return model_id
@@ -37,5 +37,5 @@ class ResConfigSettings(models.TransientModel):
         string="Max Tokens",
         help="Maximum number of output tokens to generate (maps to max_output_tokens)",
         config_parameter="gpt_core.max_tokens",
-        default=512,
+        default=1800,
     )

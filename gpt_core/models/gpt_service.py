@@ -31,7 +31,7 @@ class GPTService(models.AbstractModel):
     def _default_params(self):
         ICP = self.env['ir.config_parameter'].sudo()
         model_param = ICP.get_param('gpt_core.chatgpt_model')
-        model_name = 'gpt-5-nano'
+        model_name = 'gpt-5-mini'
         if model_param:
             if model_param.isdigit():
                 model_rec = (
@@ -41,7 +41,7 @@ class GPTService(models.AbstractModel):
             else:
                 model_name = model_param
         temperature = float(ICP.get_param('gpt_core.temperature') or 0.0)
-        max_tokens = int(ICP.get_param('gpt_core.max_tokens') or 512)
+        max_tokens = int(ICP.get_param('gpt_core.max_tokens') or 1800)
         return model_name, temperature, max_tokens
 
     @api.model
@@ -51,6 +51,7 @@ class GPTService(models.AbstractModel):
         temperature = kwargs.get('temperature', temperature)
         max_tokens = kwargs.get('max_tokens', max_tokens)
         model_name = kwargs.get('model', model_name)
+        reasoning_effort = kwargs.get('reasoning_effort', 'low')
 
         def _stringify(content):
             if isinstance(content, list):
@@ -74,6 +75,7 @@ class GPTService(models.AbstractModel):
                 'model': m_name,
                 'input': prompt,
                 'max_output_tokens': tokens,
+                'reasoning': {'effort': reasoning_effort},
             }
             if not m_name.startswith('gpt-5') and temperature is not None:
                 params['temperature'] = temperature
@@ -113,7 +115,7 @@ class GPTService(models.AbstractModel):
             return text
 
         used_retry = False
-        used_fallback = False
+        effective_max_tokens = max_tokens
 
         response = _request(model_name, max_tokens)
         _logger.info(
@@ -128,6 +130,7 @@ class GPTService(models.AbstractModel):
             used_retry = True
             retry_tokens = max(max_tokens, 128)
             response = _request(model_name, retry_tokens)
+            effective_max_tokens = retry_tokens
             _logger.info(
                 'Raw response (retry): %s',
                 response.model_dump()
@@ -135,44 +138,46 @@ class GPTService(models.AbstractModel):
                 else response.__dict__,
             )
             text = _extract_text(response)
-            if not text.strip() and model_name == 'gpt-5-nano':
-                used_fallback = True
-                fallback_model = 'gpt-5-mini'
-                _logger.info(
-                    'Falling back from %s to %s due to empty response',
-                    model_name,
-                    fallback_model,
-                )
-                response = _request(fallback_model, retry_tokens)
-                model_name = fallback_model
-                _logger.info(
-                    'Raw response (fallback): %s',
-                    response.model_dump()
-                    if hasattr(response, 'model_dump')
-                    else response.__dict__,
-                )
-                text = _extract_text(response)
-
-        if not text.strip():
-            raise ValueError('Empty response from model')
 
         usage_obj = getattr(response, 'usage', None)
         usage = {
-            'prompt_tokens': getattr(usage_obj, 'input_tokens', 0),
-            'completion_tokens': getattr(usage_obj, 'output_tokens', 0),
+            'input_tokens': getattr(usage_obj, 'input_tokens', 0),
+            'output_tokens': getattr(usage_obj, 'output_tokens', 0),
             'total_tokens': getattr(usage_obj, 'total_tokens', 0),
         }
         if not usage['total_tokens']:
             usage['total_tokens'] = (
-                usage['prompt_tokens'] + usage['completion_tokens']
+                usage['input_tokens'] + usage['output_tokens']
             )
+        token_details = getattr(response, 'output_tokens_details', None)
+        reasoning_tokens = (
+            getattr(token_details, 'reasoning_tokens', 0) if token_details else 0
+        )
+        diagnostics = {
+            'status': getattr(response, 'status', None),
+            'incomplete_details_reason': getattr(
+                getattr(response, 'incomplete_details', None), 'reason', None
+            ),
+            'input_tokens': usage['input_tokens'],
+            'output_tokens': usage['output_tokens'],
+            'reasoning_tokens': reasoning_tokens,
+            'max_output_tokens': effective_max_tokens,
+            'temperature': temperature
+            if not model_name.startswith('gpt-5') and temperature is not None
+            else None,
+            'model': model_name,
+        }
+        _logger.info('Diagnostics: %s', diagnostics)
+        if not text.strip():
+            raise ValueError('gpt-5-nano empty_output', diagnostics)
+
         self._log_usage(
             model_name,
             usage,
             messages,
             text,
+            diagnostics,
             used_retry=used_retry,
-            used_fallback=used_fallback,
         )
         return text
 
@@ -183,11 +188,11 @@ class GPTService(models.AbstractModel):
         usage,
         messages,
         response,
+        diagnostics,
         used_retry=False,
-        used_fallback=False,
     ):
-        prompt_tokens = usage.get('prompt_tokens', 0)
-        completion_tokens = usage.get('completion_tokens', 0)
+        prompt_tokens = usage.get('input_tokens', 0)
+        completion_tokens = usage.get('output_tokens', 0)
         total_tokens = usage.get(
             'total_tokens', prompt_tokens + completion_tokens
         )
@@ -214,16 +219,22 @@ class GPTService(models.AbstractModel):
 
         self.env['gpt.completion.log'].sudo().create(
             {
-                'model_name': model_name,
-                'prompt_tokens': prompt_tokens,
-                'completion_tokens': completion_tokens,
+                'model': model_name,
+                'status': diagnostics.get('status'),
+                'incomplete_details_reason': diagnostics.get(
+                    'incomplete_details_reason'
+                ),
+                'input_tokens': prompt_tokens,
+                'output_tokens': completion_tokens,
+                'reasoning_tokens': diagnostics.get('reasoning_tokens'),
                 'total_tokens': total_tokens,
+                'max_output_tokens': diagnostics.get('max_output_tokens'),
+                'temperature': diagnostics.get('temperature'),
                 'cost': cost,
                 'prompt': '\n'.join(
                     _stringify(m.get('content', '')) for m in messages
                 ),
                 'response': response,
                 'used_retry': used_retry,
-                'used_fallback': used_fallback,
             }
         )
