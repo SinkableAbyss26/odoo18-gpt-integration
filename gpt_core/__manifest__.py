@@ -5,8 +5,8 @@
     'license': 'AGPL-3',
     'summary': 'Core utilities for GPT integration',
     'description': 'Configuration and service layer for OpenAI GPT models.',
-    'author': 'Odoo GPT Integration',
-    'maintainer': 'Odoo GPT Integration',
+    'author': 'Fernando Menchaca',
+    'maintainer': 'Fernando Menchaca',
     'website': 'https://example.com',
     'depends': ['base', 'base_setup'],
     'data': [
