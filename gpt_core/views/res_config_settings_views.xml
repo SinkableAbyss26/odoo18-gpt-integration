@@ -5,37 +5,39 @@
         <field name="model">res.config.settings</field>
         <field name="inherit_id" ref="base_setup.res_config_settings_view_form"/>
         <field name="arch" type="xml">
-           <xpath expr="//block[@name='integration']" position="inside">
-                <setting id="gpt_core_setting" string="GPT" groups="base.group_system">
-                    <field name="is_gpt5" invisible="1"/>
-                    <div class="content-group mt16">
-                        <div class="row mt8">
-                            <label class="col-lg-3" string="API Key" for="openapi_api_key"/>
-                            <field name="openapi_api_key" title="OpenAI API Key"/>
+           <xpath expr="//block[@name='integration']" position="after">
+                <block name="gpt_core_block" string="GPT">
+                    <setting id="gpt_core_setting" groups="base.group_system">
+                        <field name="is_gpt5" invisible="1"/>
+                        <div class="content-group mt16">
+                            <div class="row mt8">
+                                <label class="col-lg-3" string="API Key" for="openapi_api_key"/>
+                                <field name="openapi_api_key" title="OpenAI API Key"/>
+                            </div>
                         </div>
-                    </div>
-                    <div class="content-group mt16">
-                        <field name="chatgpt_model_id"/>
-                    </div>
-                    <div class="content-group mt16" attrs="{'invisible':[('is_gpt5','=',True)]}">
-                        <div class="row">
-                            <label class="col-lg-3" string="Temperature" for="temperature"/>
-                            <field name="temperature" placeholder="0.75" help="Sampling temperature (GPT-4*)"/>
+                        <div class="content-group mt16">
+                            <field name="chatgpt_model_id"/>
                         </div>
-                    </div>
-                    <div class="content-group mt16" attrs="{'invisible':[('is_gpt5','=',False)]}">
-                        <div class="row">
-                            <label class="col-lg-3" string="Reasoning Effort" for="reasoning_effort"/>
-                            <field name="reasoning_effort" placeholder="medium" help="Allocate tokens to reasoning (GPT-5*)"/>
+                        <div class="content-group mt16" invisible="is_gpt5">
+                            <div class="row">
+                                <label class="col-lg-3" string="Temperature" for="temperature"/>
+                                <field name="temperature" placeholder="0.75" help="Sampling temperature (GPT-4*)"/>
+                            </div>
                         </div>
-                    </div>
-                    <div class="content-group mt16">
-                        <div class="row">
-                            <label class="col-lg-3" string="Max Tokens" for="max_tokens"/>
-                            <field name="max_tokens" placeholder="1600" help="Maximum output tokens (Responses: max_output_tokens / Chat: max_tokens)"/>
+                        <div class="content-group mt16" invisible="not is_gpt5">
+                            <div class="row">
+                                <label class="col-lg-3" string="Reasoning Effort" for="reasoning_effort"/>
+                                <field name="reasoning_effort" help="Allocate tokens to reasoning (GPT-5*)"/>
+                            </div>
                         </div>
-                    </div>
-                </setting>
+                        <div class="content-group mt16">
+                            <div class="row">
+                                <label class="col-lg-3" string="Max Tokens" for="max_tokens"/>
+                                <field name="max_tokens" placeholder="1600" help="Maximum output tokens (Responses: max_output_tokens / Chat: max_tokens)"/>
+                            </div>
+                        </div>
+                    </setting>
+                </block>
             </xpath>
         </field>
     </record>
