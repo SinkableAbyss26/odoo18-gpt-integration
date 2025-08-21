@@ -29,18 +29,18 @@
             <field name="name">gpt-4o-mini</field>
         </record>
     </data>
-    <data>
-        <record id="param_gpt_core_temperature" model="ir.config_parameter">
-            <field name="key">gpt_core.temperature</field>
-            <field name="value">0.75</field>
-        </record>
-        <record id="param_gpt_core_max_tokens" model="ir.config_parameter">
-            <field name="key">gpt_core.max_tokens</field>
-            <field name="value">1600</field>
-        </record>
-        <record id="param_gpt_core_reasoning_effort" model="ir.config_parameter">
-            <field name="key">gpt_core.reasoning_effort</field>
-            <field name="value">medium</field>
-        </record>
+    <data noupdate="1">
+        <function model="ir.config_parameter" name="set_param">
+            <value eval="'gpt_core.temperature'"/>
+            <value eval="'0.75'"/>
+        </function>
+        <function model="ir.config_parameter" name="set_param">
+            <value eval="'gpt_core.max_tokens'"/>
+            <value eval="'1600'"/>
+        </function>
+        <function model="ir.config_parameter" name="set_param">
+            <value eval="'gpt_core.reasoning_effort'"/>
+            <value eval="'medium'"/>
+        </function>
     </data>
 </odoo>
